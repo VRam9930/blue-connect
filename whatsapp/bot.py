@@ -29,14 +29,14 @@ def whatsapp_bot():
 
     user = users_collection.find_one({"phone": phone})
 
-    # NEW USER
+    # ================= NEW USER =================
     if not user:
         users_collection.insert_one({"phone": phone, "step": "menu"})
         msg.body(
-            "🙏 Blue Connect కు స్వాగతం\n\n"
-            "1️⃣ పని ఇవ్వాలి\n"
-            "2️⃣ పని కావాలి\n\n"
-            "సంఖ్య పంపండి"
+            "🙏 *Blue Connect కు స్వాగతం*\n\n"
+            "మీరు ఏమి చేయాలనుకుంటున్నారు?\n\n"
+            "1️⃣ పని ఇవ్వాలంటే – 1 పంపండి\n"
+            "2️⃣ పని కావాలంటే – 2 పంపండి"
         )
         return str(resp)
 
@@ -46,67 +46,129 @@ def whatsapp_bot():
     if step == "menu":
         if incoming == "1":
             users_collection.update_one({"phone": phone}, {"$set": {"step": "farmer_name"}})
-            msg.body("మీ పేరు నమోదు చేయండి")
+            msg.body("👤 మీ పేరు నమోదు చేయండి")
         elif incoming == "2":
             users_collection.update_one({"phone": phone}, {"$set": {"step": "worker_gender"}})
-            msg.body("మీ లింగం:\n1️⃣ పురుషుడు\n2️⃣ మహిళ")
+            msg.body(
+                "👤 మీ లింగం ఎంచుకోండి:\n\n"
+                "1️⃣ పురుషుడు\n"
+                "2️⃣ మహిళ"
+            )
         else:
-            msg.body("దయచేసి 1 లేదా 2 పంపండి")
+            msg.body(
+                "❓ మళ్లీ ఎంచుకోండి:\n\n"
+                "1️⃣ పని ఇవ్వాలంటే – 1 పంపండి\n"
+                "2️⃣ పని కావాలంటే – 2 పంపండి"
+            )
         return str(resp)
 
     # ================= FARMER FLOW =================
     if step == "farmer_name":
-        users_collection.update_one({"phone": phone}, {"$set": {"poster_name": incoming, "step": "farmer_poster_gender"}})
-        msg.body("మీ లింగం:\n1️⃣ పురుషుడు\n2️⃣ మహిళ")
+        users_collection.update_one(
+            {"phone": phone},
+            {"$set": {"poster_name": incoming, "step": "farmer_poster_gender"}}
+        )
+        msg.body(
+            "👤 మీ లింగం ఎంచుకోండి:\n\n"
+            "1️⃣ పురుషుడు\n"
+            "2️⃣ మహిళ"
+        )
         return str(resp)
 
     if step == "farmer_poster_gender":
         if incoming not in ["1", "2"]:
-            msg.body("1 లేదా 2 పంపండి")
+            msg.body("⚠️ సరైన ఎంపిక పంపండి (1 లేదా 2)")
             return str(resp)
+
         users_collection.update_one(
             {"phone": phone},
-            {"$set": {"poster_gender": "male" if incoming == "1" else "female", "step": "farmer_poster_age"}}
+            {"$set": {
+                "poster_gender": "male" if incoming == "1" else "female",
+                "step": "farmer_poster_age"
+            }}
         )
-        msg.body("మీ వయస్సు నమోదు చేయండి")
+        msg.body("📅 మీ వయస్సు నమోదు చేయండి")
         return str(resp)
 
     if step == "farmer_poster_age":
         if not incoming.isdigit() or not (18 <= int(incoming) <= 80):
-            msg.body("వయస్సు 18–80 మధ్య ఉండాలి")
+            msg.body("⚠️ వయస్సు 18 నుండి 80 మధ్య ఉండాలి")
             return str(resp)
-        users_collection.update_one({"phone": phone}, {"$set": {"poster_age": int(incoming), "step": "farmer_village"}})
-        msg.body("\n".join([f"{i+1}. {v}" for i, v in enumerate(VILLAGES)]))
+
+        users_collection.update_one(
+            {"phone": phone},
+            {"$set": {"poster_age": int(incoming), "step": "farmer_village"}}
+        )
+        msg.body(
+            "📍 *ఈ పని ఏ గ్రామంలో చేయాలి?*\n\n" +
+            "\n".join([f"{i+1}. {v}" for i, v in enumerate(VILLAGES)])
+        )
         return str(resp)
 
     if step == "farmer_village":
-        idx = int(incoming) - 1
-        users_collection.update_one({"phone": phone}, {"$set": {"area": VILLAGES[idx], "step": "farmer_work"}})
-        msg.body("\n".join([f"{i+1}. {w}" for i, w in enumerate(WORK_TYPES)]))
+        if not incoming.isdigit() or not (1 <= int(incoming) <= len(VILLAGES)):
+            msg.body("⚠️ సరైన గ్రామ సంఖ్య పంపండి")
+            return str(resp)
+
+        users_collection.update_one(
+            {"phone": phone},
+            {"$set": {"area": VILLAGES[int(incoming)-1], "step": "farmer_work"}}
+        )
+        msg.body(
+            "🌾 *పని రకం ఎంచుకోండి*\n\n" +
+            "\n".join([f"{i+1}. {w}" for i, w in enumerate(WORK_TYPES)])
+        )
         return str(resp)
 
     if step == "farmer_work":
-        idx = int(incoming) - 1
-        users_collection.update_one({"phone": phone}, {"$set": {"work_type": WORK_TYPES[idx], "step": "farmer_wage"}})
-        msg.body("రోజువారీ జీతం ఎంత?")
+        if not incoming.isdigit() or not (1 <= int(incoming) <= len(WORK_TYPES)):
+            msg.body("⚠️ సరైన పని రకం సంఖ్య పంపండి")
+            return str(resp)
+
+        users_collection.update_one(
+            {"phone": phone},
+            {"$set": {"work_type": WORK_TYPES[int(incoming)-1], "step": "farmer_wage"}}
+        )
+        msg.body("💰 రోజువారీ జీతం ఎంత? (₹400 – ₹1000)")
         return str(resp)
 
     if step == "farmer_wage":
         if not incoming.isdigit() or not (400 <= int(incoming) <= 1000):
-            msg.body("జీతం ₹400–₹1000 మధ్య ఉండాలి")
+            msg.body("⚠️ జీతం ₹400 నుండి ₹1000 మధ్య ఉండాలి")
             return str(resp)
-        users_collection.update_one({"phone": phone}, {"$set": {"wage": int(incoming), "step": "farmer_worker_gender"}})
-        msg.body("ఎవరు కావాలి?\n1️⃣ పురుషులు\n2️⃣ మహిళలు\n3️⃣ ఇద్దరూ")
+
+        users_collection.update_one(
+            {"phone": phone},
+            {"$set": {"wage": int(incoming), "step": "farmer_worker_gender"}}
+        )
+        msg.body(
+            "👥 ఎవరు కావాలి?\n\n"
+            "1️⃣ పురుషులు\n"
+            "2️⃣ మహిళలు\n"
+            "3️⃣ ఇద్దరూ"
+        )
         return str(resp)
 
     if step == "farmer_worker_gender":
         gender_map = {"1": "male", "2": "female", "3": "both"}
-        users_collection.update_one({"phone": phone}, {"$set": {"gender_required": gender_map[incoming], "step": "farmer_count"}})
-        msg.body("ఎంత మంది అవసరం?")
+        if incoming not in gender_map:
+            msg.body("⚠️ 1 / 2 / 3 లో ఒకటి పంపండి")
+            return str(resp)
+
+        users_collection.update_one(
+            {"phone": phone},
+            {"$set": {"gender_required": gender_map[incoming], "step": "farmer_count"}}
+        )
+        msg.body("👥 ఎంత మంది అవసరం?")
         return str(resp)
 
     if step == "farmer_count":
+        if not incoming.isdigit():
+            msg.body("⚠️ సరైన సంఖ్య పంపండి")
+            return str(resp)
+
         user = users_collection.find_one({"phone": phone})
+
         jobs_collection.insert_one({
             "area": user["area"],
             "work_type": user["work_type"],
@@ -120,32 +182,64 @@ def whatsapp_bot():
             "contact": phone,
             "created_at": datetime.utcnow()
         })
+
         users_collection.update_one({"phone": phone}, {"$set": {"step": "menu"}})
-        msg.body("✅ పని నమోదు అయ్యింది (24 గంటలు మాత్రమే కనిపిస్తుంది)")
+
+        msg.body(
+            "✅ *మీ పని విజయవంతంగా నమోదు అయ్యింది*\n\n"
+            f"🌾 పని: {user['work_type']}\n"
+            f"📍 గ్రామం: {user['area']}\n"
+            f"💰 జీతం: ₹{user['wage']}\n\n"
+            "⏳ ఈ పని 24 గంటల వరకు మాత్రమే కనిపిస్తుంది"
+        )
         return str(resp)
 
     # ================= WORKER FLOW =================
     if step == "worker_gender":
-        users_collection.update_one({"phone": phone}, {"$set": {"gender": "male" if incoming == "1" else "female", "step": "worker_village"}})
-        msg.body("\n".join([f"{i+1}. {v}" for i, v in enumerate(VILLAGES)]))
+        if incoming not in ["1", "2"]:
+            msg.body("⚠️ 1 లేదా 2 పంపండి")
+            return str(resp)
+
+        users_collection.update_one(
+            {"phone": phone},
+            {"$set": {"gender": "male" if incoming == "1" else "female", "step": "worker_village"}}
+        )
+        msg.body(
+            "📍 మీరు పని చేయాలనుకున్న గ్రామం ఎంచుకోండి:\n\n" +
+            "\n".join([f"{i+1}. {v}" for i, v in enumerate(VILLAGES)])
+        )
         return str(resp)
 
     if step == "worker_village":
-        area = VILLAGES[int(incoming) - 1]
+        if not incoming.isdigit() or not (1 <= int(incoming) <= len(VILLAGES)):
+            msg.body("⚠️ సరైన గ్రామ సంఖ్య పంపండి")
+            return str(resp)
+
+        area = VILLAGES[int(incoming)-1]
         valid_time = datetime.utcnow() - timedelta(hours=24)
 
-        applied_ids = applications_collection.distinct("job_id", {"worker_phone": phone})
+        applied_ids = applications_collection.distinct(
+            "job_id", {"worker_phone": phone}
+        )
 
         jobs = list(jobs_collection.find({
             "_id": {"$nin": applied_ids},
             "area": area,
             "created_at": {"$gte": valid_time},
             "$expr": {"$lt": ["$persons_filled", "$persons_needed"]},
-            "$or": [{"gender_required": user["gender"]}, {"gender_required": "both"}]
+            "$or": [
+                {"gender_required": user["gender"]},
+                {"gender_required": "both"}
+            ]
         }))
 
         if not jobs:
-            msg.body("❌ పనులు లేవు")
+            msg.body(
+                "❌ ప్రస్తుతం ఈ గ్రామంలో పనులు లేవు\n\n"
+                "మళ్లీ ప్రారంభించాలంటే:\n"
+                "1️⃣ పని ఇవ్వాలంటే – 1 పంపండి\n"
+                "2️⃣ పని కావాలంటే – 2 పంపండి"
+            )
             users_collection.update_one({"phone": phone}, {"$set": {"step": "menu"}})
             return str(resp)
 
@@ -154,15 +248,36 @@ def whatsapp_bot():
             {"$set": {"step": "apply_job", "jobs": [str(j["_id"]) for j in jobs]}}
         )
 
-        reply = "\n".join([f"{i+1}. {j['work_type']} – ₹{j['wage']} | ఖాళీ స్థానాలు: {j['persons_needed'] - j['persons_filled']}" for i, j in enumerate(jobs)])
-        msg.body(reply + "\nఅప్లై చేయాలంటే సంఖ్య పంపండి")
+        reply = "\n".join([
+            f"{i+1}. {j['work_type']} – ₹{j['wage']} | ఖాళీ స్థానాలు: {j['persons_needed'] - j['persons_filled']}"
+            for i, j in enumerate(jobs)
+        ])
+
+        msg.body(
+            "📋 *లభ్యమైన పనులు*\n\n" +
+            reply +
+            "\n\nఅప్లై చేయాలంటే పని సంఖ్య పంపండి"
+        )
         return str(resp)
 
     if step == "apply_job":
-        job_id = ObjectId(user["jobs"][int(incoming) - 1])
+        if not incoming.isdigit() or not (1 <= int(incoming) <= len(user["jobs"])):
+            msg.body("⚠️ సరైన పని సంఖ్య పంపండి")
+            return str(resp)
+
+        job_id = ObjectId(user["jobs"][int(incoming)-1])
+        job = jobs_collection.find_one({"_id": job_id})
 
         if applications_collection.find_one({"job_id": job_id, "worker_phone": phone}):
-            msg.body("❌ మీరు ఇప్పటికే అప్లై చేశారు")
+            msg.body(
+                "❌ మీరు ఇప్పటికే ఈ పనికి అప్లై చేశారు\n\n"
+                f"🌾 పని: {job['work_type']}\n"
+                f"📍 గ్రామం: {job['area']}\n"
+                f"💰 జీతం: ₹{job['wage']}\n"
+                f"📞 సంప్రదించండి: {job['contact']}\n\n"
+                "మళ్లీ అప్లై చేయాల్సిన అవసరం లేదు"
+            )
+            users_collection.update_one({"phone": phone}, {"$set": {"step": "menu"}})
             return str(resp)
 
         applications_collection.insert_one({
@@ -171,12 +286,26 @@ def whatsapp_bot():
             "applied_at": datetime.utcnow()
         })
 
-        jobs_collection.update_one({"_id": job_id}, {"$inc": {"persons_filled": 1}})
+        jobs_collection.update_one(
+            {"_id": job_id},
+            {"$inc": {"persons_filled": 1}}
+        )
+
         users_collection.update_one({"phone": phone}, {"$set": {"step": "menu"}})
 
-        msg.body("✅ అప్లై అయ్యింది")
+        msg.body(
+            "✅ *అప్లై విజయవంతం*\n\n"
+            f"📞 పని ఇచ్చే వ్యక్తి నంబర్:\n{job['contact']}\n\n"
+            "దయచేసి స్వయంగా సంప్రదించండి"
+        )
         return str(resp)
 
-    msg.body("Hi పంపండి")
+    # ================= FALLBACK =================
+    msg.body(
+        "⚠️ మీ సందేశం అర్థం కాలేదు\n\n"
+        "మళ్లీ ప్రారంభించాలంటే:\n\n"
+        "1️⃣ పని ఇవ్వాలంటే – 1 పంపండి\n"
+        "2️⃣ పని కావాలంటే – 2 పంపండి"
+    )
     users_collection.update_one({"phone": phone}, {"$set": {"step": "menu"}})
     return str(resp)
