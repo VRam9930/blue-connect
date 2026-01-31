@@ -8,3 +8,5 @@ db = client["blue_connect"]
 
 jobs_collection = db["jobs"]
 users_collection = db["users"]
+applications_collection = db["applications"]
+
