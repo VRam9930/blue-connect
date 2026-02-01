@@ -58,7 +58,11 @@ def whatsapp_bot():
                     {"phone": phone},
                     {"$set": {"step": "farmer_village"}}
                 )
-               msg.body(f"🙏 {user['poster_name']} గారు,\n\n""📍 ఈసారి పని ఏ గ్రామంలో చేయాలి?\n\n" +"\n".join([f"{i+1}. {v}" for i, v in enumerate(VILLAGES)]))
+               msg.body(
+    f"🙏 {user['poster_name']} గారు,\n\n"
+    "📍 ఈసారి పని ఏ గ్రామంలో చేయాలి?\n\n"
+    + "\n".join([f"{i+1}. {v}" for i, v in enumerate(VILLAGES)])
+)
             else:
                 users_collection.update_one(
                     {"phone": phone},
