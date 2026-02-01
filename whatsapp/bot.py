@@ -58,10 +58,7 @@ def whatsapp_bot():
                     {"phone": phone},
                     {"$set": {"step": "farmer_village"}}
                 )
-                msg.body(
-                    f"🙏 {user['poster_name']} గారు,\n\n"
-                    "📍 ఈసారి పని ఏ గ్రామంలో చేయాలి?"
-                )
+               msg.body(f"🙏 {user['poster_name']} గారు,\n\n""📍 ఈసారి పని ఏ గ్రామంలో చేయాలి?\n\n" +"\n".join([f"{i+1}. {v}" for i, v in enumerate(VILLAGES)]))
             else:
                 users_collection.update_one(
                     {"phone": phone},
@@ -92,7 +89,7 @@ def whatsapp_bot():
             {"phone": phone},
             {"$set": {"poster_name": incoming, "step": "farmer_poster_gender"}}
         )
-        msg.body("👤 మీ లింగం ఎంచుకోండి:\n1️⃣ పురుషుడు\n2️⃣ మహిళ")
+        msg.body(" మీ లింగం ఎంచుకోండి:\n1️⃣ పురుషుడ🚹 \n2️⃣ మహిళ 🚺")
         return str(resp)
 
     if step == "farmer_poster_gender":
