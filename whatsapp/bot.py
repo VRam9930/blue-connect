@@ -328,12 +328,12 @@ def whatsapp_bot():
         elif incoming == "2":
             # Edit option
             msg.body(
-                "✏️ ఏది మార్చాలి?\n\n"
+                "✏️ ఏది మార్చాలి అనుకుంటున్నారు?\n\n"
                 "1. గ్రామం\n"
                 "2. పని రకం\n"
                 "3. జీతం\n"
                 "4. కావలసిన లింగం\n"
-                "5. సంఖ్య"
+                "5. కార్మికుల సంఖ్య"
             )
             users_collection.update_one({"phone": phone}, {"$set": {"step": "farmer_edit_choice"}})
 
