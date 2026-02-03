@@ -1,18 +1,10 @@
 from flask import Blueprint, request
 from twilio.twiml.messaging_response import MessagingResponse
-from twilio.rest import Client  # FEATURE 2: For farmer notifications
 from database.db import users_collection, jobs_collection, applications_collection
 from datetime import datetime, timedelta
 from bson import ObjectId
-import os
 
 whatsapp_bp = Blueprint("whatsapp", __name__)
-
-# FEATURE 2: Twilio client for sending farmer notifications
-TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
-TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
-TWILIO_WHATSAPP_NUMBER = os.getenv("TWILIO_WHATSAPP_NUMBER", "whatsapp:+14155238886")  # Default sandbox number
-twilio_client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN) if TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN else None
 
 # Fixed options
 VILLAGES = [
@@ -95,6 +87,7 @@ def whatsapp_bot():
                     f"🙏 {user['poster_name']} గారు,\n\n"
                     "📍 గ్రామం ఎంచుకోండి:\n\n"
                     + "\n".join([f"{i+1}. {v}" for i, v in enumerate(VILLAGES)])
+                    + "\n\nఉదా: 1"
                 )
 
             else:
@@ -102,7 +95,7 @@ def whatsapp_bot():
                     {"phone": phone},
                     {"$set": {"step": "farmer_name"}}
                 )
-                msg.body("👤 మీ పేరు నమోదు చేయండి")
+                msg.body("👤 మీ పేరు నమోదు చేయండి\nఉదా: రవి")
         elif incoming == "2":
             users_collection.update_one(
                 {"phone": phone},
@@ -111,7 +104,8 @@ def whatsapp_bot():
             msg.body(
                 "👤 మీ లింగం ఎంచుకోండి:\n\n"
                 "1️⃣👨పురుషుడు\n"
-                "2️⃣👩మహిళ"
+                "2️⃣👩మహిళ\n\n"
+                "ఉదా: 1"
             )
         else:
             msg.body(
@@ -148,7 +142,7 @@ def whatsapp_bot():
                 "step": "farmer_poster_age"
             }}
         )
-        msg.body("📅 మీ వయస్సు నమోదు చేయండి")
+        msg.body("📅 మీ వయస్సు నమోదు చేయండి\nఉదా: 35")
         return str(resp)
 
     if step == "farmer_poster_age":
@@ -163,6 +157,7 @@ def whatsapp_bot():
         msg.body(
             "📍 *ఈ పని ఏ గ్రామంలో చేయాలి?*\n\n" +
             "\n".join([f"{i+1}. {v}" for i, v in enumerate(VILLAGES)])
+            + "\n\nఉదా: 1"
         )
         return str(resp)
 
@@ -181,6 +176,7 @@ def whatsapp_bot():
                 f"{i+1}. {WORK_TYPE_ICONS[w]} {w}"
                 for i, w in enumerate(WORK_TYPES)
             ])
+            + "\n\nఉదా: 1"
         )
 
         return str(resp)
@@ -190,9 +186,34 @@ def whatsapp_bot():
             msg.body("⚠️ సరైన పని రకం సంఖ్య పంపండి")
             return str(resp)
 
+        user = users_collection.find_one({"phone": phone})
+        selected_work = WORK_TYPES[int(incoming)-1]
         users_collection.update_one(
             {"phone": phone},
-            {"$set": {"work_type": WORK_TYPES[int(incoming)-1], "step": "farmer_wage"}}
+            {"$set": {"work_type": selected_work}}
+        )
+
+        if user.get("edit_mode"):
+            users_collection.update_one(
+                {"phone": phone},
+                {"$set": {"step": "farmer_confirm", "edit_mode": False}}
+            )
+            msg.body(
+                "📋 మీ పని వివరాలు:\n\n"
+                f"{WORK_TYPE_ICONS[selected_work]} పని: {selected_work}\n"
+                f"📍 గ్రామం: {user['area']}\n"
+                f"💰 జీతం: ₹{user['wage']}\n"
+                f"👥 కావలసినవారు: "
+                + ("పురుషులు" if user['gender_required'] == "male" else "మహిళలు" if user['gender_required'] == "female" else "ఇద్దరూ") +
+                f"\n🔢 అవసరం: {user.get('persons_needed', 0)} మంది\n\n"
+                "1️⃣ నిర్ధారించండి (Post)\n"
+                "2️⃣ మార్చాలి (Edit)"
+            )
+            return str(resp)
+
+        users_collection.update_one(
+            {"phone": phone},
+            {"$set": {"step": "farmer_wage"}}
         )
         msg.body("💰 రోజువారీ జీతం నమోదు చేయండి (₹400 – ₹1000)")
         return str(resp)
@@ -210,7 +231,8 @@ def whatsapp_bot():
             "👥 ఎవరు కావాలి?\n\n"
             "1️⃣👨 పురుషులు\n"
             "2️⃣👩 మహిళలు\n"
-            "3️⃣👨🏻‍🤝‍👩🏻 ఇద్దరూ"
+            "3️⃣👨🏻‍🤝‍👩🏻 ఇద్దరూ\n\n"
+            "ఉదా: 1"
         )
 
         return str(resp)
@@ -249,52 +271,36 @@ def whatsapp_bot():
 
         user = users_collection.find_one({"phone": phone})
 
-        # FEATURE 1: Store job details in temp_job session object (not in jobs_collection yet)
-        temp_job = {
-            "area": user["area"],
-            "work_type": user["work_type"],
-            "wage": user["wage"],
-            "gender_required": user["gender_required"],
-            "persons_needed": int(incoming)
-        }
-
-        # FEATURE 1: Display gender in Telugu for acknowledgement
-        gender_display = {"male": "పురుషులు", "female": "మహిళలు", "both": "ఇద్దరూ"}
-
         users_collection.update_one(
             {"phone": phone},
-            {"$set": {"temp_job": temp_job, "step": "farmer_confirm"}}
+            {"$set": {"persons_needed": int(incoming), "step": "farmer_confirm"}}
         )
 
-        # FEATURE 1: Show acknowledgement message with job summary
         msg.body(
-            f"🙏 {user['poster_name']} గారు,\n\n"
-            "📋 *మీరు నమోదు చేసిన వివరాలు:*\n\n"
-            f"{WORK_TYPE_ICONS[temp_job['work_type']]} పని: {temp_job['work_type']}\n"
-            f"📍 గ్రామం: {temp_job['area']}\n"
-            f"💰 రోజువారీ జీతం: ₹{temp_job['wage']}\n"
-            f"👥 అవసరం: {gender_display[temp_job['gender_required']]}\n"
-            f"🔢 సంఖ్య: {temp_job['persons_needed']} మంది\n\n"
-            "దయచేసి ఎంచుకోండి:\n\n"
-            "1️⃣ ధృవీకరించండి & పోస్ట్ చేయండి\n"
-            "2️⃣ వివరాలు సవరించండి"
+            "📋 మీ పని వివరాలు:\n\n"
+            f"{WORK_TYPE_ICONS[user['work_type']]} పని: {user['work_type']}\n"
+            f"📍 గ్రామం: {user['area']}\n"
+            f"💰 జీతం: ₹{user['wage']}\n"
+            f"👥 కావలసినవారు: "
+            + ("పురుషులు" if user['gender_required'] == "male" else "మహిళలు" if user['gender_required'] == "female" else "ఇద్దరూ") +
+            f"\n🔢 అవసరం: {incoming} మంది\n\n"
+            "1️⃣ నిర్ధారించండి (Post)\n"
+            "2️⃣ మార్చాలి (Edit)"
         )
 
         return str(resp)
 
-    # FEATURE 1: Handle farmer confirmation or edit choice
     if step == "farmer_confirm":
-        if incoming == "1":
-            # FEATURE 1: Farmer confirmed - insert job into database
-            user = users_collection.find_one({"phone": phone})
-            temp_job = user["temp_job"]
+        user = users_collection.find_one({"phone": phone})
 
+        if incoming == "1":
+            # Post the job
             jobs_collection.insert_one({
-                "area": temp_job["area"],
-                "work_type": temp_job["work_type"],
-                "wage": temp_job["wage"],
-                "gender_required": temp_job["gender_required"],
-                "persons_needed": temp_job["persons_needed"],
+                "area": user["area"],
+                "work_type": user["work_type"],
+                "wage": user["wage"],
+                "gender_required": user["gender_required"],
+                "persons_needed": user["persons_needed"],
                 "persons_filled": 0,
                 "poster_name": user["poster_name"],
                 "poster_gender": user["poster_gender"],
@@ -303,18 +309,15 @@ def whatsapp_bot():
                 "created_at": datetime.utcnow()
             })
 
-            users_collection.update_one(
-                {"phone": phone},
-                {"$set": {"step": "menu"}, "$unset": {"temp_job": ""}}
-            )
+            users_collection.update_one({"phone": phone}, {"$set": {"step": "menu"}})
 
             msg.body(
                 f"🙏 {user['poster_name']} గారు,\n\n"
                 "మీ పని విజయవంతంగా నమోదు అయ్యింది! ✅\n\n"
                 "📋 *పని వివరాలు:*\n"
-                f"{WORK_TYPE_ICONS[temp_job['work_type']]} పని: {temp_job['work_type']}\n"
-                f"📍 గ్రామం: {temp_job['area']}\n"
-                f"💰 రోజువారీ జీతం: ₹{temp_job['wage']}\n\n"
+                f"{WORK_TYPE_ICONS[user['work_type']]} పని: {user['work_type']}\n"
+                f"📍 గ్రామం: {user['area']}\n"
+                f"💰 రోజువారీ జీతం: ₹{user['wage']}\n\n"
                 "👥 కార్మికులు త్వరలో మీకు కనెక్ట్ అవుతారు.\n"
                 "⏳ *గమనిక:* ఈ పని 24 గంటల వరకు మాత్రమే కనిపిస్తుంది.\n\n"
                 "📞 వెంటనే కాల్ వచ్చినప్పుడు స్పందించండి – ఖాళీలు త్వరగా నింపబడతాయి.\n\n"
@@ -323,60 +326,50 @@ def whatsapp_bot():
             )
 
         elif incoming == "2":
-            # FEATURE 1: Farmer wants to edit - show field selection menu
-            users_collection.update_one(
-                {"phone": phone},
-                {"$set": {"step": "farmer_edit_choice"}}
-            )
+            # Edit option
             msg.body(
-                "📝 *ఏ వివరాన్ని సవరించాలనుకుంటున్నారు?*\n\n"
-                "1️⃣ 📍 గ్రామం\n"
-                "2️⃣ 🌾 పని రకం\n"
-                "3️⃣ 💰 జీతం\n"
-                "4️⃣ 👥 అవసరమైన లింగం\n"
-                "5️⃣ 🔢 కార్మికుల సంఖ్య"
+                "✏️ ఏది మార్చాలి?\n\n"
+                "1. గ్రామం\n"
+                "2. పని రకం\n"
+                "3. జీతం\n"
+                "4. కావలసిన లింగం\n"
+                "5. సంఖ్య"
             )
+            users_collection.update_one({"phone": phone}, {"$set": {"step": "farmer_edit_choice"}})
+
         else:
             msg.body(
                 "⚠️ సరైన ఎంపిక ఇవ్వలేదు\n\n"
-                "దయచేసి ఎంచుకోండి:\n"
-                "1️⃣ ధృవీకరించండి & పోస్ట్ చేయండి\n"
-                "2️⃣ వివరాలు సవరించండి"
+                "1️⃣ నిర్ధారించండి\n"
+                "2️⃣ మార్చాలి"
             )
 
         return str(resp)
 
-    # FEATURE 1: Handle edit field selection
     if step == "farmer_edit_choice":
-        edit_steps = {
-            "1": "farmer_edit_village",
-            "2": "farmer_edit_work",
-            "3": "farmer_edit_wage",
-            "4": "farmer_edit_gender",
-            "5": "farmer_edit_count"
+        edit_map = {
+            "1": "farmer_village",
+            "2": "farmer_work",
+            "3": "farmer_wage",
+            "4": "farmer_worker_gender",
+            "5": "farmer_count"
         }
-        
-        if incoming not in edit_steps:
+
+        if incoming not in edit_map:
             msg.body(
                 "⚠️ సరైన ఎంపిక ఇవ్వలేదు\n\n"
-                "దయచేసి ఎంచుకోండి:\n"
-                "1️⃣ గ్రామం\n"
-                "2️⃣ పని రకం\n"
-                "3️⃣ జీతం\n"
-                "4️⃣ లింగం\n"
-                "5️⃣ సంఖ్య"
+                "1. గ్రామం\n"
+                "2. పని రకం\n"
+                "3. జీతం\n"
+                "4. కావలసిన లింగం\n"
+                "5. కార్మికుల సంఖ్య"
             )
             return str(resp)
-        
-        users_collection.update_one(
-            {"phone": phone},
-            {"$set": {"step": edit_steps[incoming]}}
-        )
-        
-        # Show appropriate prompt based on selection
+
+        # Prompt based on edit choice
         if incoming == "1":
             msg.body(
-                "📍 గ్రామం ఎంచుకోండి:\n\n" +
+                "📍 *గ్రామం ఎంచుకోండి:*\n\n" +
                 "\n".join([f"{i+1}. {v}" for i, v in enumerate(VILLAGES)])
             )
         elif incoming == "2":
@@ -397,187 +390,9 @@ def whatsapp_bot():
                 "3️⃣👨🏻‍🤝‍👩🏻 ఇద్దరూ"
             )
         elif incoming == "5":
-            msg.body(
-                "👥 ఎంత మంది అవసరం?\n\n"
-                "👉 సంఖ్య మాత్రమే పంపండి (ఉదా: 5)"
-            )
-        
-        return str(resp)
+            msg.body("👥 ఎంత మంది అవసరం?\n\n👉 సంఖ్య మాత్రమే పంపండి (ఉదా: 5)")
 
-    # FEATURE 1: Edit flow - village
-    if step == "farmer_edit_village":
-        if not incoming.isdigit() or not (1 <= int(incoming) <= len(VILLAGES)):
-            msg.body("⚠️ సరైన గ్రామ సంఖ్య పంపండి")
-            return str(resp)
-
-        user = users_collection.find_one({"phone": phone})
-        temp_job = user["temp_job"]
-        temp_job["area"] = VILLAGES[int(incoming)-1]
-
-        # FEATURE 1: Display gender in Telugu for acknowledgement
-        gender_display = {"male": "పురుషులు", "female": "మహిళలు", "both": "ఇద్దరూ"}
-
-        users_collection.update_one(
-            {"phone": phone},
-            {"$set": {"temp_job": temp_job, "step": "farmer_confirm"}}
-        )
-
-        # FEATURE 1: Show acknowledgement again after editing
-        msg.body(
-            f"🙏 {user['poster_name']} గారు,\n\n"
-            "📋 *మీరు నమోదు చేసిన వివరాలు:*\n\n"
-            f"{WORK_TYPE_ICONS[temp_job['work_type']]} పని: {temp_job['work_type']}\n"
-            f"📍 గ్రామం: {temp_job['area']}\n"
-            f"💰 రోజువారీ జీతం: ₹{temp_job['wage']}\n"
-            f"👥 అవసరం: {gender_display[temp_job['gender_required']]}\n"
-            f"🔢 సంఖ్య: {temp_job['persons_needed']} మంది\n\n"
-            "దయచేసి ఎంచుకోండి:\n\n"
-            "1️⃣ ధృవీకరించండి & పోస్ట్ చేయండి\n"
-            "2️⃣ వివరాలు సవరించండి"
-        )
-        return str(resp)
-
-    # FEATURE 1: Edit flow - work type
-    if step == "farmer_edit_work":
-        if not incoming.isdigit() or not (1 <= int(incoming) <= len(WORK_TYPES)):
-            msg.body("⚠️ సరైన పని రకం సంఖ్య పంపండి")
-            return str(resp)
-
-        user = users_collection.find_one({"phone": phone})
-        temp_job = user["temp_job"]
-        temp_job["work_type"] = WORK_TYPES[int(incoming)-1]
-
-        # FEATURE 1: Display gender in Telugu for acknowledgement
-        gender_display = {"male": "పురుషులు", "female": "మహిళలు", "both": "ఇద్దరూ"}
-
-        users_collection.update_one(
-            {"phone": phone},
-            {"$set": {"temp_job": temp_job, "step": "farmer_confirm"}}
-        )
-
-        # FEATURE 1: Show acknowledgement again after editing
-        msg.body(
-            f"🙏 {user['poster_name']} గారు,\n\n"
-            "📋 *మీరు నమోదు చేసిన వివరాలు:*\n\n"
-            f"{WORK_TYPE_ICONS[temp_job['work_type']]} పని: {temp_job['work_type']}\n"
-            f"📍 గ్రామం: {temp_job['area']}\n"
-            f"💰 రోజువారీ జీతం: ₹{temp_job['wage']}\n"
-            f"👥 అవసరం: {gender_display[temp_job['gender_required']]}\n"
-            f"🔢 సంఖ్య: {temp_job['persons_needed']} మంది\n\n"
-            "దయచేసి ఎంచుకోండి:\n\n"
-            "1️⃣ ధృవీకరించండి & పోస్ట్ చేయండి\n"
-            "2️⃣ వివరాలు సవరించండి"
-        )
-        return str(resp)
-
-    # FEATURE 1: Edit flow - wage
-    if step == "farmer_edit_wage":
-        if not incoming.isdigit() or not (400 <= int(incoming) <= 1000):
-            msg.body("⚠️ జీతం ₹400 నుండి ₹1000 మధ్య ఉండాలి")
-            return str(resp)
-
-        user = users_collection.find_one({"phone": phone})
-        temp_job = user["temp_job"]
-        temp_job["wage"] = int(incoming)
-
-        # FEATURE 1: Display gender in Telugu for acknowledgement
-        gender_display = {"male": "పురుషులు", "female": "మహిళలు", "both": "ఇద్దరూ"}
-
-        users_collection.update_one(
-            {"phone": phone},
-            {"$set": {"temp_job": temp_job, "step": "farmer_confirm"}}
-        )
-
-        # FEATURE 1: Show acknowledgement again after editing
-        msg.body(
-            f"🙏 {user['poster_name']} గారు,\n\n"
-            "📋 *మీరు నమోదు చేసిన వివరాలు:*\n\n"
-            f"{WORK_TYPE_ICONS[temp_job['work_type']]} పని: {temp_job['work_type']}\n"
-            f"📍 గ్రామం: {temp_job['area']}\n"
-            f"💰 రోజువారీ జీతం: ₹{temp_job['wage']}\n"
-            f"👥 అవసరం: {gender_display[temp_job['gender_required']]}\n"
-            f"🔢 సంఖ్య: {temp_job['persons_needed']} మంది\n\n"
-            "దయచేసి ఎంచుకోండి:\n\n"
-            "1️⃣ ధృవీకరించండి & పోస్ట్ చేయండి\n"
-            "2️⃣ వివరాలు సవరించండి"
-        )
-        return str(resp)
-
-    # FEATURE 1: Edit flow - gender
-    if step == "farmer_edit_gender":
-        gender_map = {"1": "male", "2": "female", "3": "both"}
-        if incoming not in gender_map:
-            msg.body(
-                "⚠️ సరైన ఎంపిక ఇవ్వలేదు\n\n"
-                "దయచేసి ఎంచుకోండి:\n"
-                "1️⃣ 👨 పురుషులు\n"
-                "2️⃣ 👩 మహిళలు\n"
-                "3️⃣ 👨🏻‍🤝‍👩🏻 ఇద్దరూ"
-            )
-            return str(resp)
-
-        user = users_collection.find_one({"phone": phone})
-        temp_job = user["temp_job"]
-        temp_job["gender_required"] = gender_map[incoming]
-
-        # FEATURE 1: Display gender in Telugu for acknowledgement
-        gender_display = {"male": "పురుషులు", "female": "మహిళలు", "both": "ఇద్దరూ"}
-
-        users_collection.update_one(
-            {"phone": phone},
-            {"$set": {"temp_job": temp_job, "step": "farmer_confirm"}}
-        )
-
-        # FEATURE 1: Show acknowledgement again after editing
-        msg.body(
-            f"🙏 {user['poster_name']} గారు,\n\n"
-            "📋 *మీరు నమోదు చేసిన వివరాలు:*\n\n"
-            f"{WORK_TYPE_ICONS[temp_job['work_type']]} పని: {temp_job['work_type']}\n"
-            f"📍 గ్రామం: {temp_job['area']}\n"
-            f"💰 రోజువారీ జీతం: ₹{temp_job['wage']}\n"
-            f"👥 అవసరం: {gender_display[temp_job['gender_required']]}\n"
-            f"🔢 సంఖ్య: {temp_job['persons_needed']} మంది\n\n"
-            "దయచేసి ఎంచుకోండి:\n\n"
-            "1️⃣ ధృవీకరించండి & పోస్ట్ చేయండి\n"
-            "2️⃣ వివరాలు సవరించండి"
-        )
-        return str(resp)
-
-    # FEATURE 1: Edit flow - count (then show acknowledgement again)
-    if step == "farmer_edit_count":
-        if not incoming.isdigit():
-            msg.body(
-                "⚠️ సరైన సంఖ్య పంపండి\n"
-                "(ఉదా: 5)"
-            )
-            return str(resp)
-
-        user = users_collection.find_one({"phone": phone})
-        temp_job = user["temp_job"]
-        temp_job["persons_needed"] = int(incoming)
-
-        # FEATURE 1: Display gender in Telugu for acknowledgement
-        gender_display = {"male": "పురుషులు", "female": "మహిళలు", "both": "ఇద్దరూ"}
-
-        users_collection.update_one(
-            {"phone": phone},
-            {"$set": {"temp_job": temp_job, "step": "farmer_confirm"}}
-        )
-
-        # FEATURE 1: Show acknowledgement again after editing
-        msg.body(
-            f"🙏 {user['poster_name']} గారు,\n\n"
-            "📋 *మీరు నమోదు చేసిన వివరాలు:*\n\n"
-            f"{WORK_TYPE_ICONS[temp_job['work_type']]} పని: {temp_job['work_type']}\n"
-            f"📍 గ్రామం: {temp_job['area']}\n"
-            f"💰 రోజువారీ జీతం: ₹{temp_job['wage']}\n"
-            f"👥 అవసరం: {gender_display[temp_job['gender_required']]}\n"
-            f"🔢 సంఖ్య: {temp_job['persons_needed']} మంది\n\n"
-            "దయచేసి ఎంచుకోండి:\n\n"
-            "1️⃣ ధృవీకరించండి & పోస్ట్ చేయండి\n"
-            "2️⃣ వివరాలు సవరించండి"
-        )
-
+        users_collection.update_one({"phone": phone}, {"$set": {"step": edit_map[incoming], "edit_mode": True}})
         return str(resp)
 
     # ================= WORKER FLOW =================
@@ -599,6 +414,7 @@ def whatsapp_bot():
         msg.body(
             "📍 మీరు పని చేయాలనుకున్న గ్రామం ఎంచుకోండి:\n\n" +
             "\n".join([f"{i+1}. {v}" for i, v in enumerate(VILLAGES)])
+            + "\n\nఉదా: 1"
         )
         return str(resp)
 
@@ -681,29 +497,6 @@ def whatsapp_bot():
             {"_id": job_id},
             {"$inc": {"persons_filled": 1}}
         )
-
-        # FEATURE 2: Send notification to farmer when worker applies
-        if twilio_client:
-            try:
-                worker_gender_display = "పురుషుడు" if user["gender"] == "male" else "మహిళ"
-                farmer_notification = (
-                    f"🔔 *కొత్త అప్లికేషన్ వచ్చింది!*\n\n"
-                    f"📋 పని: {job['work_type']}\n"
-                    f"📍 గ్రామం: {job['area']}\n"
-                    f"💰 జీతం: ₹{job['wage']}\n\n"
-                    f"👤 కార్మికుడు వివరాలు:\n"
-                    f"📞 ఫోన్: {phone}\n"
-                    f"👥 లింగం: {worker_gender_display}\n\n"
-                    f"దయచేసి వారిని సంప్రదించండి."
-                )
-                twilio_client.messages.create(
-                    from_=TWILIO_WHATSAPP_NUMBER,
-                    body=farmer_notification,
-                    to=job["contact"]
-                )
-            except Exception as e:
-                # Silent fail - don't block worker flow
-                print(f"Failed to send farmer notification: {e}")
 
         users_collection.update_one({"phone": phone}, {"$set": {"step": "menu"}})
 
