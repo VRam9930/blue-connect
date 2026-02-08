@@ -1,6 +1,9 @@
 from flask import Flask
 from whatsapp.bot import whatsapp_bp
-import config  # loads Mongo URI
+from dotenv import load_dotenv
+import config
+
+load_dotenv()
 
 app = Flask(__name__)
 app.register_blueprint(whatsapp_bp)
