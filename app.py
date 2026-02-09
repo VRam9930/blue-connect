@@ -1,9 +1,9 @@
+from dotenv import load_dotenv
+load_dotenv()   # ✅ MUST be at the top
+
 from flask import Flask
 from whatsapp.bot import whatsapp_bp
-from dotenv import load_dotenv
 import config
-
-load_dotenv()
 
 app = Flask(__name__)
 app.register_blueprint(whatsapp_bp)
@@ -14,4 +14,3 @@ def home():
 
 if __name__ == "__main__":
     app.run()
-
